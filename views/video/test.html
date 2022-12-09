@@ -1,0 +1,463 @@
+<!--
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <title>Hello, world!</title>
+    &lt;!&ndash; include three.js library &ndash;&gt;
+    <script src="js/three.js"></script>
+    &lt;!&ndash; include jsartookit &ndash;&gt;
+    <script src="jsartoolkit5/artoolkit.min.js"></script>
+    <script src="jsartoolkit5/artoolkit.api.js"></script>
+    &lt;!&ndash; include threex.artoolkit &ndash;&gt;
+    <script src="threex/threex-artoolkitsource.js"></script>
+    <script src="threex/threex-artoolkitcontext.js"></script>
+    <script src="threex/threex-arbasecontrols.js"></script>
+    <script src="threex/threex-armarkercontrols.js"></script>
+</head>
+
+<body style="margin : 0px; overflow: hidden; font-family: Monospace;">
+
+<video id="video" autoplay loop muted playsinline crossorigin="anonymous" webkit-playsinline="" style="display:none">
+    <source src="video/test2.mp4" type="video/mp4; codecs=&quot;avc1.42E01E, mp4a.40.2&quot;">
+</video>
+
+&lt;!&ndash;
+  Example created by Lee Stemkoski: https://github.com/stemkoski
+  Based on the AR.js library and examples created by Jerome Etienne: https://github.com/jeromeetienne/AR.js/
+&ndash;&gt;
+
+<script>
+
+    var scene, camera, renderer, clock, deltaTime, totalTime;
+
+    var arToolkitSource, arToolkitContext;
+
+    var markerRoot1;
+
+    var mesh1;
+
+    initialize();
+    animate();
+
+    function initialize() {
+        scene = new THREE.Scene();
+
+        let ambientLight = new THREE.AmbientLight(0xcccccc, 0.5);
+        scene.add(ambientLight);
+
+        camera = new THREE.Camera();
+        scene.add(camera);
+
+        renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true
+        });
+        renderer.setClearColor(new THREE.Color('lightgrey'), 0)
+        renderer.setSize(640, 480);
+        renderer.domElement.style.position = 'absolute'
+        renderer.domElement.style.top = '0px'
+        renderer.domElement.style.left = '0px'
+        document.body.appendChild(renderer.domElement);
+
+        clock = new THREE.Clock();
+        deltaTime = 0;
+        totalTime = 0;
+
+        ////////////////////////////////////////////////////////////
+        // setup arToolkitSource
+        ////////////////////////////////////////////////////////////
+
+        arToolkitSource = new THREEx.ArToolkitSource({
+            sourceType: 'webcam',
+        });
+
+        function onResize() {
+            arToolkitSource.onResize()
+            arToolkitSource.copySizeTo(renderer.domElement)
+            if (arToolkitContext.arController !== null) {
+                arToolkitSource.copySizeTo(arToolkitContext.arController.canvas)
+            }
+        }
+
+        arToolkitSource.init(function onReady() {
+            onResize()
+        });
+
+        // handle resize event
+        window.addEventListener('resize', function () {
+            onResize()
+        });
+
+        ////////////////////////////////////////////////////////////
+        // setup arToolkitContext
+        ////////////////////////////////////////////////////////////
+
+        // create atToolkitContext
+        arToolkitContext = new THREEx.ArToolkitContext({
+            cameraParametersUrl: 'data/camera_para.dat',
+            detectionMode: 'mono'
+        });
+
+        // copy projection matrix to camera when initialization complete
+        arToolkitContext.init(function onCompleted() {
+            camera.projectionMatrix.copy(arToolkitContext.getProjectionMatrix());
+        });
+
+        ////////////////////////////////////////////////////////////
+        // setup markerRoots
+        ////////////////////////////////////////////////////////////
+
+        // build markerControls
+        markerRoot1 = new THREE.Group();
+        scene.add(markerRoot1);
+
+
+        const THREE = window.MINDAR.IMAGE.THREE;
+        const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+            container: document.querySelector("#container"),
+            imageTargetSrc: "https://cdn.jsdelivr.net/npm/mind-ar@1.1.5/examples/image-tracking/assets/card-example/card.mind"
+        });
+        const {renderer, scene, camera} = mindarThree;
+        const anchor = mindarThree.addAnchor(0);
+        const geometry = new THREE.PlaneGeometry(1, 0.55);
+
+
+
+        let markerControls1 = new THREEx.ArMarkerControls(arToolkitContext, markerRoot1, {
+            type: 'pattern', patternUrl: "data/hiro.patt",
+        })
+
+        let geometry1 = new THREE.PlaneBufferGeometry(2, 2, 4, 4);
+
+        let video = document.getElementById('video');
+        let texture = new THREE.VideoTexture(video);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.format = THREE.RGBFormat;
+        const material1 = new THREE.MeshBasicMaterial( {color: 0x00ffff, transparent: true, opacity: 0.5} );
+
+
+        mesh1 = new THREE.Mesh(geometry1, material1);
+        mesh1.rotation.x = -Math.PI / 2;
+
+        markerRoot1.add(mesh1);
+    }
+
+
+    function update() {
+        // update artoolkit on every frame
+        if (arToolkitSource.ready !== false)
+            arToolkitContext.update(arToolkitSource.domElement);
+    }
+
+
+    function render() {
+        renderer.render(scene, camera);
+    }
+
+
+    function animate() {
+        requestAnimationFrame(animate);
+        deltaTime = clock.getDelta();
+        totalTime += deltaTime;
+        update();
+        render();
+    }
+    function vertexShader() {
+        return `
+        varying vec2 vUv;
+        void main( void ) {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+        }
+    `
+    }
+    function fragmentShader() {
+        return `
+        uniform vec3 keyColor;
+        uniform float similarity;
+        uniform float smoothness;
+        varying vec2 vUv;
+        uniform sampler2D map;
+        void main() {
+
+            vec4 videoColor = texture2D(map, vUv);
+
+            float Y1 = 0.299 * keyColor.r + 0.587 * keyColor.g + 0.114 * keyColor.b;
+            float Cr1 = keyColor.r - Y1;
+            float Cb1 = keyColor.b - Y1;
+
+            float Y2 = 0.299 * videoColor.r + 0.587 * videoColor.g + 0.114 * videoColor.b;
+            float Cr2 = videoColor.r - Y2;
+            float Cb2 = videoColor.b - Y2;
+
+            float blend = smoothstep(similarity, similarity + smoothness, distance(vec2(Cr2, Cb2), vec2(Cr1, Cb1)));
+            gl_FragColor = vec4(videoColor.rgb, videoColor.a * blend);
+        }
+    `
+    }
+    document.getElementById('video').play();
+
+</script>
+</body>
+</html>-->
+
+
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="js/three.js"></script>
+    <script src="jsartoolkit5/artoolkit.min.js"></script>
+    <script src="jsartoolkit5/artoolkit.api.js"></script>
+    <script src="threex/threex-artoolkitsource.js"></script>
+    <script src="threex/threex-artoolkitcontext.js"></script>
+    <script src="threex/threex-arbasecontrols.js"></script>
+    <script src="threex/threex-armarkercontrols.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.1.5/dist/mindar-image-three.prod.js"></script>
+    <script src="//cdn.8thwall.com/web/xrextras/xrextras.js"></script>
+    <script src="https://unpkg.com/merge-images"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #control {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+        #muted-button {
+            position: fixed;
+            left: 45%;
+            botton:20;
+            width:100%;
+            padding: 0px 0px;
+        }
+    </style>
+</head>
+
+<!--<canvas id='canvas' ref={canvasRef} width='auto' height='auto'></canvas>-->
+<video id="video" autoplay muted loop playsinline="true" crossorigin="anonymous" webkit-playsinline="" style="display:none">
+    <source src="video/01_Sakura.mp4" type="video/mp4; codecs=&quot;avc1.42E01E, mp4a.40.2&quot;">
+</video>
+<!--<canvas id="c"></canvas>-->
+<!--<button id="screenshot" type="button">Save...</button>-->
+<body id="page">
+<a id="descarga-link" href="#"></a>
+<div id="container">
+
+    <div id="recorder" class="recorder-container" style="width: 150px;height: 150px;">
+        <button id="recorder-button" class="style-reset" style="transform: scale(0.4);"></button>
+        <a id="muted-button" style="margin-bottom: 20px;"> <img id="play-img" src="img/off.png" style="width: 30px;height: 30px"></a>
+    </div>
+
+</div>
+<div id="flashElement" class="flash-element"></div>
+<div id="previewContainer" hidden class="image-preview fade-in" style="pointer-events: auto; display:none;">
+    <div class="top-bar">
+        <div class="preview-box">
+            <button id="closePreviewButton" class="style-reset icon-button">
+                <img src="//cdn.8thwall.com/web/img/mediarecorder/close-v2.svg">
+            </button>
+            <img id="imagePreview" src="">
+            <button id="toggleMuteButton" class="style-reset icon-button">
+                <img id="muteButtonImg" src="//cdn.8thwall.com/web/img/mediarecorder/sound-on-v1.svg">
+            </button>
+        </div>
+    </div>
+
+    <div class="bottom-bar">
+        <div class="finalize-container">
+            <div id="finalizeText">Preparing...</div>
+            <progress id="finalizeProgressBar" value="0" max="100"></progress>
+        </div>
+        <button id="downloadButton" class="style-reset icon-button">
+            <img src="//cdn.8thwall.com/web/img/mediarecorder/download-v1.svg">
+        </button>
+        <div id="openSafariText" class="style-reset">Downloading is only available in Safari</div>
+        <div id="tapAndHoldText" class="style-reset">Tap + Hold to Share</div>
+        <button id="actionButton" class="style-reset show-with-download-button show-after-download">
+            <span id="actionButtonText">View</span>
+            <img id="actionButtonImg" src="//cdn.8thwall.com/web/img/mediarecorder/view-v1.svg">
+        </button>
+    </div>
+</div>
+</body>
+<script>
+
+    const THREE = window.MINDAR.IMAGE.THREE;
+
+    const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+        container: document.querySelector("#container"),
+        imageTargetSrc: "data/version1.mind"
+    });
+    const {renderer, scene, camera} = mindarThree;
+
+    var photoFile;
+    const anchor = mindarThree.addAnchor(0);
+    const geometry = new THREE.PlaneGeometry(1, 0.55);
+    // const material = new THREE.MeshBasicMaterial( {color: 0x00ffff, transparent: true, opacity: 0.5} );
+    let video = document.getElementById('video');
+    let texture = new THREE.VideoTexture(video);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.format = THREE.RGBFormat;
+    let material = new THREE.ShaderMaterial({
+        transparent: true,
+        uniforms: {
+            map: {value: texture},
+            keyColor: {value: [0.0, 1.0, 0.0]},
+            similarity: {value: 0.7},
+            smoothness: {value: 0.1},
+        },
+        vertexShader: vertexShader(),
+        fragmentShader: fragmentShader(),
+    })
+    const plane = new THREE.Mesh(geometry, material);
+    anchor.group.add(plane);
+    const start = async () => {
+        await mindarThree.start();
+        renderer.setAnimationLoop(() => {
+            renderer.render(scene, camera);
+        });
+    }
+    $("#closePreviewButton").on("click", function () {
+        $('#previewContainer').hide();
+        $('#recorder-button').show();
+    })
+
+    $("#muted-button").on("click", function () {
+        $("#video").prop('muted', false)
+        $("#play-img").attr("src","img/on.png")
+    })
+    $("#downloadButton").on("click", async function () {
+        await navigator.share({
+            files: [photoFile]
+        })
+    })
+
+    $("#recorder-button").on("click", function () {
+        $('#recorder-button').hide();
+        $('#flashElement').removeClass();
+        setTimeout(() => {
+            $('#flashElement').addClass("flash-element");
+        }, 10);
+
+        html2canvas(document.querySelector('#container > video')).then(cameraCanvas => {
+
+            renderer.render(scene, camera);
+            //꽃가루
+            let aSceneCanvas = renderer.domElement
+            let aScene = aSceneCanvas.toDataURL('image/png')
+
+            //카메라
+            let frame = resizeCanvas(cameraCanvas,aSceneCanvas.width,cameraCanvas.height).toDataURL("image/png")
+
+
+            mergeImages([frame, aScene]).then(b64 => {
+                $('#previewContainer').show();
+                $('#imagePreview').attr("src",b64)
+                photoFile = dataURLtoFile(b64,"IMG" + currentTime() +".png")
+                // let link = document.getElementById("descarga-link", "png");
+                // link.setAttribute("download", );
+                // link.setAttribute("href", b64);
+                // link.click();
+                // console.log("foto tomada");
+            });
+        });
+    });
+    function dataURLtoFile(dataurl, filename) {
+
+        var arr = dataurl.split(','),
+            mime = arr[0].match(/:(.*?);/)[1],
+            bstr = atob(arr[1]),
+            n = bstr.length,
+            u8arr = new Uint8Array(n);
+
+        while(n--){
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+
+        return new File([u8arr], filename, {type:mime});
+    }
+    function currentTime() {
+        let date = new Date()
+        let a = date.getFullYear()
+        let b = date.getMonth()+1 // JS months are 0 indexed, 0 = January, 11 = December
+        let c = date.getDate()
+
+        let d = date.getHours()
+        let e = date.getMinutes()
+        let f = date.getSeconds()
+
+        return a+'-'+b+'-'+c+' '+d+' '+e+' '+f
+    }
+
+
+    function vertexShader() {
+        return `
+        varying vec2 vUv;
+        void main( void ) {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+        }
+    `
+    }
+
+    function fragmentShader() {
+        return `
+        uniform vec3 keyColor;
+        uniform float similarity;
+        uniform float smoothness;
+        varying vec2 vUv;
+        uniform sampler2D map;
+        void main() {
+
+            vec4 videoColor = texture2D(map, vUv);
+
+            float Y1 = 0.299 * keyColor.r + 0.587 * keyColor.g + 0.114 * keyColor.b;
+            float Cr1 = keyColor.r - Y1;
+            float Cb1 = keyColor.b - Y1;
+
+            float Y2 = 0.299 * videoColor.r + 0.587 * videoColor.g + 0.114 * videoColor.b;
+            float Cr2 = videoColor.r - Y2;
+            float Cb2 = videoColor.b - Y2;
+
+            float blend = smoothstep(similarity, similarity + smoothness, distance(vec2(Cr2, Cb2), vec2(Cr1, Cb1)));
+            gl_FragColor = vec4(videoColor.rgb, videoColor.a * blend);
+        }
+    `
+    }
+    start();
+    document.getElementById('video').play();
+    const stopBtn = document.querySelector("button#recorder-button");
+
+
+    function resizeCanvas(origCanvas, width, height) {
+        let resizedCanvas = document.createElement("canvas");
+        let resizedContext = resizedCanvas.getContext("2d");
+
+        resizedCanvas.width = width;
+        resizedCanvas.height = height;
+
+
+
+        let gapX = (origCanvas.width - width) / 2
+        resizedContext.drawImage(origCanvas,
+            gapX, 0, width, height,
+            0, 0, width, height);
+        return resizedCanvas
+    }
+
+</script>
+</html>
